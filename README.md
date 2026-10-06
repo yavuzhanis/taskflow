@@ -4,23 +4,21 @@ Tam özellikli, çok kullanıcılı görev yönetimi uygulaması.
 
 ## Özellikler
 
-- Clerk ile kayıt, giriş, güvenli oturum ve e-posta koduyla şifre sıfırlama
-- Her kullanıcı için izole Task / Project / Tag / Subtask / Comment verisi
-- Liste ve sürükle-bırak Kanban görünümü
-- Hızlı görev ekleme (`Cmd/Ctrl + K` ve Enter)
-- Markdown görev açıklamaları
-- Alt görevler ve yorumlar
-- Düşük / Normal / Yüksek / Kritik öncelik
-- Projeler, etiketler ve son tarihler
-- Bugün / Bu hafta / Geciken akıllı filtreleri
-- Dashboard günlük tamamlanma oranı ve yaklaşan son tarihler
-- Manuel ve otomatik arşiv
-- Global arama
-- Koyu / açık / sistem teması
-- Profil, avatar ve şifre yönetimi
-- JSON / CSV veri dışa aktarımı
-- Responsive mobil arayüz
-- Vercel + Supabase PostgreSQL için hazır yapı
+- **Güçlü Kimlik Doğrulama:** Clerk ile kayıt, giriş, güvenli oturum ve e-posta koduyla şifre sıfırlama
+- **Çok Kiracılı Güvenlik (Multi-tenant Isolation):** Her kullanıcı için izole Task / Project / Tag / Subtask / Comment verisi ve otomatik test scripti (`npm run test:tenant-schema`)
+- **Süper Yönetici Konsolu (`/admin`):** Rol bazlı yetkilendirme (USER / ADMIN), kullanıcı yönetimi, canlı Supabase latency/sağlık monitörü, sistem duyuruları banner yönetimi ve küresel arşivleme
+- **Zengin Bildirim Sistemi:** Uygulama içi bildirim zili, son tarih alarmları, tarayıcı Masaüstü Bildirimleri (Desktop Notifications)
+- **Web Audio API Ses Efektleri:** Görev tamamlama, silme ve aksiyonlar için ayarlanabilir tatmin edici ses geribildirimleri
+- **Görünüm Seçenekleri:** Liste ve sürükle-bırak Kanban panosu
+- **Hızlı Görev Ekleme:** `Cmd/Ctrl + K` global arama ve `N`/`C` klavye kısayolları
+- **Görev Detayı:** Markdown açıklamaları, alt görevler (subtasks) ve zaman damgalı yorumlar
+- **Öncelik & Filtreleme:** Düşük / Normal / Yüksek / Kritik öncelik; Bugün / Bu hafta / Geciken akıllı filtreleri
+- **Dashboard & Analitik:** Günlük tamamlanma oranı grafikleri, yaklaşan son tarihler ve aktivite akışı
+- **Otomatik Arşivleme:** Belirli günden eski tamamlanan görevleri otomatik veya manuel arşivleme
+- **Tema Desteği:** Kusursuz Koyu (Dark), Açık (Light) ve Sistem temaları
+- **Veri Dışa Aktarımı:** JSON ve CSV formatlarında anında dışa aktarma (Export)
+- **Vercel & Supabase Uyumlu:** Next.js 16 Turbopack ve Prisma 7 ile sıfır konfigürasyon deploy hazır
+
 
 ## Gereksinimler
 
