@@ -7,10 +7,11 @@
   },
   "scripts": {
     "dev": "prisma generate && next dev",
-    "build": "prisma generate && next build",
+    "build": "prisma generate && next build --webpack",
+    "vercel-build": "npm run db:validate && npm run test:tenant-schema && prisma generate && prisma migrate deploy && next build --webpack",
     "start": "next start",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "next typegen && tsc --noEmit",
     "db:generate": "prisma generate",
     "db:validate": "prisma validate",
     "db:format": "prisma format",

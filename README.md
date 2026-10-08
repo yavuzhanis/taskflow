@@ -93,10 +93,18 @@ Veritabanı kontrolü:
 
 1. Projeyi GitHub'a gönder.
 2. Vercel'de repository'yi import et.
-3. `.env.local` içindeki dört Clerk değişkenini, `DATABASE_URL` ve `DIRECT_URL` değerlerini Vercel Environment Variables alanına ekle.
+3. `.env.local` içindeki Clerk değişkenlerini, `DATABASE_URL`, `DIRECT_URL`, `ADMIN_EMAILS` ve `CRON_SECRET` değerlerini Vercel Environment Variables alanına ekle.
 4. Deploy et.
 
-Build komutu `prisma generate && next build` olarak hazırdır.
+`vercel.json` Vercel build komutunu `npm run vercel-build` olarak sabitler. Bu komut sırasıyla Prisma şemasını doğrular, tenant izolasyon testini çalıştırır, Prisma Client üretir, production migration'ları `prisma migrate deploy` ile uygular ve Next.js production build'i `next build --webpack` ile alır.
+
+Vercel Cron her gün `03:00 UTC` saatinde `/api/cron/archive` endpoint'ini tetikler. Bu, Türkiye saatiyle `06:00` civarında otomatik arşivlemeyi çalıştırır. Endpoint `Authorization: Bearer $CRON_SECRET` kontrolü yaptığı için Vercel Production ortamında uzun ve rastgele bir `CRON_SECRET` tanımlı olmalıdır.
+
+Yerelde production build kontrolü:
+
+```bash
+npm run build
+```
 
 ## Güvenlik notu
 
