@@ -12,6 +12,8 @@ const tenantModels = [
   "Subtask",
   "TaskComment",
   "TaskTag",
+  "TaskAttachment",
+  "MailDelivery",
   "Notification",
   "ActivityLog",
 ];

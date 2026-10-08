@@ -36,6 +36,26 @@ enum TaskView {
   KANBAN
 }
 
+enum TaskApprovalStatus {
+  NOT_REQUIRED
+  PENDING
+  APPROVED
+  REVISION_REQUESTED
+}
+
+enum RecurrenceFrequency {
+  NONE
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+enum MailDeliveryStatus {
+  SKIPPED
+  SENT
+  FAILED
+}
+
 model User {
   id                   String          @id
   email                String          @unique
@@ -49,26 +69,31 @@ model User {
   createdAt            DateTime        @default(now())
   updatedAt            DateTime        @updatedAt
 
-  tasks       Task[]
-  projects    Project[]
-  tags        Tag[]
-  subtasks    Subtask[]
-  comments    TaskComment[]
-  notifications Notification[]
-  activities    ActivityLog[]
+  tasks          Task[]
+  assignedTasks  Task[]           @relation("AssignedTasks")
+  approvedTasks  Task[]           @relation("ApprovedTasks")
+  projects       Project[]
+  tags           Tag[]
+  subtasks       Subtask[]
+  comments       TaskComment[]
+  attachments    TaskAttachment[]
+  mailDeliveries MailDelivery[]
+  notifications  Notification[]
+  activities     ActivityLog[]
 
   @@index([email])
 }
 
 model Project {
-  id          String   @id @default(cuid())
-  userId      String
-  name        String
-  description String?  @db.Text
-  color       String   @default("#6366f1")
-  isArchived  Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                String   @id @default(cuid())
+  userId            String
+  name              String
+  description       String?  @db.Text
+  color             String   @default("#6366f1")
+  completionEmailTo String?  @db.Text
+  isArchived        Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   tasks Task[]
@@ -94,36 +119,67 @@ model Tag {
 }
 
 model Task {
-  id          String       @id @default(cuid())
-  userId      String
-  projectId   String?
-  title       String
-  description String?      @db.Text
-  status      TaskStatus   @default(TODO)
-  priority    TaskPriority @default(NORMAL)
-  dueDate     DateTime?
-  completedAt DateTime?
-  archivedAt  DateTime?
-  deletedAt   DateTime?
-  position    Float        @default(0)
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  id                     String              @id @default(cuid())
+  userId                 String
+  projectId              String?
+  title                  String
+  description            String?             @db.Text
+  status                 TaskStatus          @default(TODO)
+  priority               TaskPriority        @default(NORMAL)
+  assignedToId           String?
+  approvalStatus         TaskApprovalStatus  @default(NOT_REQUIRED)
+  approvalNote           String?             @db.Text
+  approvedById           String?
+  approvedAt             DateTime?
+  recurrenceFrequency    RecurrenceFrequency @default(NONE)
+  recurrenceInterval     Int                 @default(1)
+  recurrenceSourceTaskId String?
+  dueDate                DateTime?
+  completedAt            DateTime?
+  archivedAt             DateTime?
+  deletedAt              DateTime?
+  position               Float               @default(0)
+  createdAt              DateTime            @default(now())
+  updatedAt              DateTime            @updatedAt
 
-  user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  project  Project?      @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  subtasks Subtask[]
-  comments TaskComment[]
-  taskTags TaskTag[]
-  notifications Notification[]
-  activities    ActivityLog[]
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assignedTo     User?            @relation("AssignedTasks", fields: [assignedToId], references: [id], onDelete: SetNull)
+  approvedBy     User?            @relation("ApprovedTasks", fields: [approvedById], references: [id], onDelete: SetNull)
+  project        Project?         @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  subtasks       Subtask[]
+  comments       TaskComment[]
+  taskTags       TaskTag[]
+  attachments    TaskAttachment[]
+  mailDeliveries MailDelivery[]
+  notifications  Notification[]
+  activities     ActivityLog[]
 
   @@index([userId, status])
   @@index([userId, dueDate])
   @@index([userId, archivedAt])
   @@index([userId, deletedAt])
   @@index([userId, projectId])
+  @@index([userId, assignedToId])
+  @@index([userId, approvalStatus])
+  @@index([userId, recurrenceFrequency])
   @@index([userId, updatedAt])
   @@index([userId, status, position])
+}
+
+model TaskAttachment {
+  id        String   @id @default(cuid())
+  userId    String
+  taskId    String
+  name      String
+  url       String   @db.Text
+  mimeType  String?
+  size      Int?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([userId, taskId])
 }
 
 model Subtask {
@@ -208,9 +264,26 @@ model ActivityLog {
   @@index([userId, createdAt])
 }
 
+model MailDelivery {
+  id         String             @id @default(cuid())
+  userId     String
+  taskId     String?
+  recipients String             @db.Text
+  subject    String
+  status     MailDeliveryStatus @default(SKIPPED)
+  error      String?            @db.Text
+  createdAt  DateTime           @default(now())
+
+  user User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  task Task? @relation(fields: [taskId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([taskId, createdAt])
+  @@index([status])
+}
+
 model SystemSetting {
   key       String   @id
   value     String   @db.Text
   updatedAt DateTime @updatedAt
 }
-

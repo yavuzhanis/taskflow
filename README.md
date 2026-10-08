@@ -100,6 +100,27 @@ Veritabanı kontrolü:
 
 Vercel Cron her gün `03:00 UTC` saatinde `/api/cron/archive` endpoint'ini tetikler. Bu, Türkiye saatiyle `06:00` civarında otomatik arşivlemeyi çalıştırır. Endpoint `Authorization: Bearer $CRON_SECRET` kontrolü yaptığı için Vercel Production ortamında uzun ve rastgele bir `CRON_SECRET` tanımlı olmalıdır.
 
+### Görev tamamlanınca e-posta gönderimi
+
+Görev `Tamamlandı` durumuna alındığında ilgili ofise otomatik e-posta göndermek için Vercel Environment Variables alanına SMTP bilgilerini ekle:
+
+```env
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_STARTTLS=true
+SMTP_USER=yavuzhan.is@kapadokya.edu.tr
+SMTP_PASSWORD=...
+SMTP_FROM_EMAIL=yavuzhan.is@kapadokya.edu.tr
+SMTP_FROM_NAME=TaskFlow
+TASK_COMPLETION_EMAIL_TO=ofis@example.com
+TASK_COMPLETION_EMAIL_CC=
+```
+
+Her proje oluşturulurken `Tamamlanınca Mail Gidecek Adresler` alanına ilgili ofis/birim adresleri yazılabilir. Görev tamamlandığında sistem önce görevin bağlı olduğu projedeki adreslere mail gönderir. Projede adres yoksa `TASK_COMPLETION_EMAIL_TO` global fallback adresi kullanılır.
+
+`SMTP_PASSWORD`, `SMTP_USER`, `SMTP_HOST`, `DATABASE_URL`, `DIRECT_URL`, `CLERK_SECRET_KEY` ve `CRON_SECRET` Vercel'de **Secret** olarak tutulmalıdır. SMTP değişkenleri tanımlı değilse görev tamamlama akışı devam eder, sadece e-posta gönderimi atlanır.
+
 Yerelde production build kontrolü:
 
 ```bash

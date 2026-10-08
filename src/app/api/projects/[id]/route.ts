@@ -15,7 +15,17 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const parsed = projectSchema.partial().safeParse(body);
     if (!parsed.success) return badRequest(parsed.error.issues[0]?.message ?? "Geçersiz proje verisi");
     if (!await prisma.project.findFirst({ where: { id, userId: user.id }, select: { id: true } })) return NextResponse.json({ error: "Proje bulunamadı" }, { status: 404 });
-    const project = await prisma.project.update({ where: { id }, data: parsed.data, include: { _count: { select: { tasks: true } } } });
+    const project = await prisma.project.update({
+      where: { id },
+      data: {
+        ...parsed.data,
+        completionEmailTo:
+          parsed.data.completionEmailTo === undefined
+            ? undefined
+            : parsed.data.completionEmailTo?.trim() || null,
+      },
+      include: { _count: { select: { tasks: true } } },
+    });
     return NextResponse.json({ project });
   } catch (error) { return apiError(error); }
 }

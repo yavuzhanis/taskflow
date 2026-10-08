@@ -9,9 +9,12 @@ import {
   CheckSquare,
   Database,
   FolderKanban,
+  Mail,
   Megaphone,
   MessageSquare,
+  Paperclip,
   RefreshCw,
+  Repeat2,
   Search,
   ShieldAlert,
   ShieldCheck,
@@ -48,6 +51,12 @@ type AdminOverviewResponse = {
     totalProjects: number;
     totalComments: number;
     totalActivities: number;
+    pendingApprovals: number;
+    recurringTasks: number;
+    attachmentCount: number;
+    sentMailDeliveries: number;
+    failedMailDeliveries: number;
+    overdueTasks: number;
     dbLatencyMs: number;
   };
   settings: {
@@ -138,10 +147,24 @@ export function AdminDashboardClient({ currentAdminId }: { currentAdminId: strin
       }),
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ["admin", "overview"] });
-      toast.success(data.message);
+      if (data.count > 0) {
+        toast.success(data.message);
+      } else {
+        toast.info(data.message);
+      }
     },
     onError: (err: Error) => toast.error(err.message),
   });
+
+  const runGlobalArchive = () => {
+    if (
+      confirm(
+        "Tüm kullanıcıların tamamlanmış ve henüz arşivlenmemiş görevleri arşive alınacak. Devam edilsin mi?",
+      )
+    ) {
+      triggerGlobalArchive.mutate();
+    }
+  };
 
   const metrics = query.data?.metrics;
   const users = query.data?.users ?? [];
@@ -191,7 +214,7 @@ export function AdminDashboardClient({ currentAdminId }: { currentAdminId: strin
 
           <Button
             size="sm"
-            onClick={() => triggerGlobalArchive.mutate()}
+            onClick={runGlobalArchive}
             disabled={triggerGlobalArchive.isPending}
             className="bg-purple-600 hover:bg-purple-700 text-white shadow-xs"
           >
@@ -281,6 +304,86 @@ export function AdminDashboardClient({ currentAdminId }: { currentAdminId: strin
             {metrics?.dbLatencyMs !== undefined ? `${metrics.dbLatencyMs}ms` : "—"}
           </p>
           <p className="mt-1 text-[11px] text-muted-foreground">Canlı Supabase havuzu</p>
+        </article>
+      </section>
+
+      <section className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+        <article className="rounded-2xl border border-border/80 bg-card/80 p-4 shadow-xs">
+          <div className="flex items-center justify-between text-muted-foreground">
+            <span className="text-xs font-semibold">Bekleyen Onay</span>
+            <div className="grid size-8 place-items-center rounded-lg bg-amber-500/10 text-amber-500">
+              <ShieldCheck className="size-4" />
+            </div>
+          </div>
+          <p className="mt-3 text-2xl font-bold tracking-tight">
+            {metrics?.pendingApprovals ?? "—"}
+          </p>
+          <p className="mt-1 text-[11px] text-muted-foreground">Revizyon akışındaki görevler</p>
+        </article>
+
+        <article className="rounded-2xl border border-border/80 bg-card/80 p-4 shadow-xs">
+          <div className="flex items-center justify-between text-muted-foreground">
+            <span className="text-xs font-semibold">Geciken Görev</span>
+            <div className="grid size-8 place-items-center rounded-lg bg-red-500/10 text-red-500">
+              <AlertTriangle className="size-4" />
+            </div>
+          </div>
+          <p className="mt-3 text-2xl font-bold tracking-tight">
+            {metrics?.overdueTasks ?? "—"}
+          </p>
+          <p className="mt-1 text-[11px] text-muted-foreground">Tamamlanmamış son tarih</p>
+        </article>
+
+        <article className="rounded-2xl border border-border/80 bg-card/80 p-4 shadow-xs">
+          <div className="flex items-center justify-between text-muted-foreground">
+            <span className="text-xs font-semibold">Tekrarlayan</span>
+            <div className="grid size-8 place-items-center rounded-lg bg-cyan-500/10 text-cyan-500">
+              <Repeat2 className="size-4" />
+            </div>
+          </div>
+          <p className="mt-3 text-2xl font-bold tracking-tight">
+            {metrics?.recurringTasks ?? "—"}
+          </p>
+          <p className="mt-1 text-[11px] text-muted-foreground">Aktif tekrar kuralı</p>
+        </article>
+
+        <article className="rounded-2xl border border-border/80 bg-card/80 p-4 shadow-xs">
+          <div className="flex items-center justify-between text-muted-foreground">
+            <span className="text-xs font-semibold">Ek Dosya</span>
+            <div className="grid size-8 place-items-center rounded-lg bg-violet-500/10 text-violet-500">
+              <Paperclip className="size-4" />
+            </div>
+          </div>
+          <p className="mt-3 text-2xl font-bold tracking-tight">
+            {metrics?.attachmentCount ?? "—"}
+          </p>
+          <p className="mt-1 text-[11px] text-muted-foreground">Görevlere bağlı link</p>
+        </article>
+
+        <article className="rounded-2xl border border-border/80 bg-card/80 p-4 shadow-xs">
+          <div className="flex items-center justify-between text-muted-foreground">
+            <span className="text-xs font-semibold">Mail Başarılı</span>
+            <div className="grid size-8 place-items-center rounded-lg bg-emerald-500/10 text-emerald-500">
+              <Mail className="size-4" />
+            </div>
+          </div>
+          <p className="mt-3 text-2xl font-bold tracking-tight">
+            {metrics?.sentMailDeliveries ?? "—"}
+          </p>
+          <p className="mt-1 text-[11px] text-muted-foreground">Tamamlandı bildirimi</p>
+        </article>
+
+        <article className="rounded-2xl border border-border/80 bg-card/80 p-4 shadow-xs">
+          <div className="flex items-center justify-between text-muted-foreground">
+            <span className="text-xs font-semibold">Mail Hatası</span>
+            <div className="grid size-8 place-items-center rounded-lg bg-rose-500/10 text-rose-500">
+              <Mail className="size-4" />
+            </div>
+          </div>
+          <p className="mt-3 text-2xl font-bold tracking-tight">
+            {metrics?.failedMailDeliveries ?? "—"}
+          </p>
+          <p className="mt-1 text-[11px] text-muted-foreground">SMTP kontrol gerektirir</p>
         </article>
       </section>
 
@@ -642,7 +745,7 @@ export function AdminDashboardClient({ currentAdminId }: { currentAdminId: strin
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => triggerGlobalArchive.mutate()}
+                    onClick={runGlobalArchive}
                     disabled={triggerGlobalArchive.isPending}
                     className="text-xs shrink-0"
                   >

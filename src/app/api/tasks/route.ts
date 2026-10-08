@@ -12,6 +12,12 @@ function dayBounds(date: Date) {
   return { start, end };
 }
 
+async function validateAssignedUser(assignedToId: string | null | undefined) {
+  if (!assignedToId) return true;
+  const user = await getPrisma().user.findUnique({ where: { id: assignedToId }, select: { id: true } });
+  return Boolean(user);
+}
+
 export async function GET(req: NextRequest) {
   try {
     const user = await ensureCurrentUser();
@@ -64,6 +70,7 @@ export async function POST(req: NextRequest) {
       const project = await prisma.project.findFirst({ where: { id: data.projectId, userId: user.id, isArchived: false }, select: { id: true } });
       if (!project) return badRequest("Proje bulunamadı");
     }
+    if (!(await validateAssignedUser(data.assignedToId))) return badRequest("Atanacak kullanıcı bulunamadı");
     if (data.tagIds?.length) {
       const count = await prisma.tag.count({ where: { userId: user.id, id: { in: data.tagIds } } });
       if (count !== new Set(data.tagIds).size) return badRequest("Geçersiz etiket seçimi");
@@ -76,6 +83,11 @@ export async function POST(req: NextRequest) {
         description: data.description ?? null,
         status: data.status ?? "TODO",
         priority: data.priority ?? "NORMAL",
+        assignedToId: data.assignedToId ?? null,
+        approvalStatus: data.approvalStatus ?? "NOT_REQUIRED",
+        approvalNote: data.approvalNote ?? null,
+        recurrenceFrequency: data.recurrenceFrequency ?? "NONE",
+        recurrenceInterval: data.recurrenceInterval ?? 1,
         projectId: data.projectId ?? null,
         dueDate: data.dueDate ? new Date(data.dueDate) : null,
         completedAt: data.status === "DONE" ? new Date() : null,

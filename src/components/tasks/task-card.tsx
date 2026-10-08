@@ -8,19 +8,51 @@ import {
   CircleAlert,
   GripVertical,
   MessageSquare,
+  Paperclip,
+  Repeat2,
+  ShieldCheck,
+  UserRound,
 } from "lucide-react";
 import { toast } from "sonner";
 
 import { playSuccessChime } from "@/lib/audio";
 import { fetchJson, formatDate } from "@/lib/utils";
 import { useUIStore } from "@/stores/ui-store";
-import type { TaskDTO } from "@/types/task";
+import type { TaskApprovalStatus, TaskDTO } from "@/types/task";
 
 const priorityConfig = {
   LOW: { label: "Düşük", dot: "bg-zinc-400", badge: "bg-zinc-500/10 text-zinc-600 dark:text-zinc-400" },
   NORMAL: { label: "Normal", dot: "bg-blue-500", badge: "bg-blue-500/10 text-blue-600 dark:text-blue-400" },
   HIGH: { label: "Yüksek", dot: "bg-amber-500", badge: "bg-amber-500/10 text-amber-600 dark:text-amber-400" },
   CRITICAL: { label: "Kritik", dot: "bg-red-500", badge: "bg-red-500/10 text-red-600 dark:text-red-400" },
+} as const;
+
+const approvalConfig: Record<
+  TaskApprovalStatus,
+  { label: string; className: string }
+> = {
+  NOT_REQUIRED: {
+    label: "Onay yok",
+    className: "bg-muted text-muted-foreground",
+  },
+  PENDING: {
+    label: "Onay bekliyor",
+    className: "bg-amber-500/10 text-amber-700 dark:text-amber-300",
+  },
+  APPROVED: {
+    label: "Onaylandı",
+    className: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+  },
+  REVISION_REQUESTED: {
+    label: "Revizyon",
+    className: "bg-red-500/10 text-red-700 dark:text-red-300",
+  },
+};
+
+const recurrenceLabel = {
+  DAILY: "Günlük",
+  WEEKLY: "Haftalık",
+  MONTHLY: "Aylık",
 } as const;
 
 export function TaskCard({
@@ -71,8 +103,10 @@ export function TaskCard({
   const completedSubtasks =
     task.subtasks?.filter((s) => s.isCompleted).length ?? 0;
   const commentCount = task.comments?.length ?? 0;
+  const attachmentCount = task.attachments?.length ?? 0;
 
   const priorityInfo = priorityConfig[task.priority] ?? priorityConfig.NORMAL;
+  const approvalInfo = approvalConfig[task.approvalStatus];
 
   return (
     <article
@@ -144,6 +178,31 @@ export function TaskCard({
               </span>
             )}
 
+            {task.assignedTo && (
+              <span className="inline-flex max-w-[150px] items-center gap-1.5 rounded-lg border border-border/60 bg-muted/40 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                <UserRound className="size-3 shrink-0" />
+                <span className="truncate">
+                  {task.assignedTo.name || task.assignedTo.email}
+                </span>
+              </span>
+            )}
+
+            {task.approvalStatus !== "NOT_REQUIRED" && (
+              <span
+                className={`inline-flex items-center gap-1.5 rounded-lg px-2 py-0.5 text-[10px] font-semibold ${approvalInfo.className}`}
+              >
+                <ShieldCheck className="size-3" />
+                {approvalInfo.label}
+              </span>
+            )}
+
+            {task.recurrenceFrequency !== "NONE" && (
+              <span className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-background px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                <Repeat2 className="size-3" />
+                {recurrenceLabel[task.recurrenceFrequency]}
+              </span>
+            )}
+
             {/* Tags */}
             {task.taskTags?.slice(0, 2).map(({ tag }) => (
               <span
@@ -198,6 +257,16 @@ export function TaskCard({
                 >
                   <MessageSquare className="size-3" />
                   {commentCount}
+                </span>
+              )}
+
+              {attachmentCount > 0 && (
+                <span
+                  className="inline-flex items-center gap-1 text-muted-foreground"
+                  title={`${attachmentCount} ek`}
+                >
+                  <Paperclip className="size-3" />
+                  {attachmentCount}
                 </span>
               )}
             </div>

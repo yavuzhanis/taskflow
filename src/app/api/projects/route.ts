@@ -16,7 +16,16 @@ export async function POST(req: NextRequest) {
   try {
     const user = await ensureCurrentUser(); const parsed = projectSchema.safeParse(await req.json());
     if (!parsed.success) return badRequest(parsed.error.issues[0]?.message ?? "Geçersiz proje verisi");
-    const project = await getPrisma().project.create({ data: { userId: user.id, name: parsed.data.name, description: parsed.data.description ?? null, color: parsed.data.color ?? "#6366f1" }, include: { _count: { select: { tasks: true } } } });
+    const project = await getPrisma().project.create({
+      data: {
+        userId: user.id,
+        name: parsed.data.name,
+        description: parsed.data.description ?? null,
+        color: parsed.data.color ?? "#6366f1",
+        completionEmailTo: parsed.data.completionEmailTo?.trim() || null,
+      },
+      include: { _count: { select: { tasks: true } } },
+    });
     try {
       const { logActivity } = await import("@/lib/notifications");
       await logActivity({

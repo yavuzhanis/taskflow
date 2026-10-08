@@ -2,7 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, ArrowRight, FolderKanban, Plus, Sparkles, Trash2 } from "lucide-react";
+import { Archive, ArrowRight, FolderKanban, Mail, Plus, Sparkles, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,7 @@ export function ProjectsClient() {
   const qc = useQueryClient();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [completionEmailTo, setCompletionEmailTo] = useState("");
   const [color, setColor] = useState("#6366f1");
 
   const query = useQuery({
@@ -37,11 +38,12 @@ export function ProjectsClient() {
       fetchJson("/api/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, description, color }),
+        body: JSON.stringify({ name, description, color, completionEmailTo }),
       }),
     onSuccess: () => {
       setName("");
       setDescription("");
+      setCompletionEmailTo("");
       qc.invalidateQueries({ queryKey: ["projects"] });
       toast.success("Proje başarıyla oluşturuldu");
     },
@@ -70,6 +72,26 @@ export function ProjectsClient() {
         toast.success("Proje arşivlendi");
       })
       .catch((e) => toast.error(e.message));
+
+  const updateCompletionEmail = (project: ProjectDTO) => {
+    const nextValue = prompt(
+      `${project.name} için tamamlanınca mail gidecek adresleri girin:`,
+      project.completionEmailTo ?? "",
+    );
+
+    if (nextValue === null) return;
+
+    fetchJson(`/api/projects/${project.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ completionEmailTo: nextValue }),
+    })
+      .then(() => {
+        qc.invalidateQueries({ queryKey: ["projects"] });
+        toast.success("Proje mail listesi güncellendi");
+      })
+      .catch((e) => toast.error(e.message));
+  };
 
   return (
     <div className="mx-auto w-full max-w-[1500px] px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
@@ -130,6 +152,21 @@ export function ProjectsClient() {
                 rows={3}
                 className="mt-1.5 w-full rounded-xl border border-border/70 bg-background p-3.5 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
               />
+            </div>
+
+            <div>
+              <label className="text-xs font-medium text-foreground">
+                Tamamlanınca Mail Gidecek Adresler
+              </label>
+              <input
+                value={completionEmailTo}
+                onChange={(e) => setCompletionEmailTo(e.target.value)}
+                placeholder="ofis@kapadokya.edu.tr, birim@kapadokya.edu.tr"
+                className="mt-1.5 h-10 w-full rounded-xl border border-border/70 bg-background px-3.5 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
+              />
+              <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
+                Bu projedeki görevler tamamlanınca mail bu adreslere gönderilir.
+              </p>
             </div>
 
             <div>
@@ -207,6 +244,12 @@ export function ProjectsClient() {
                     <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
                       {p.description || "Açıklama belirtilmemiş."}
                     </p>
+                    {p.completionEmailTo && (
+                      <div className="mt-3 flex items-start gap-2 rounded-xl border border-border/60 bg-muted/35 px-3 py-2 text-[11px] text-muted-foreground">
+                        <Mail className="mt-0.5 size-3.5 shrink-0 text-primary" />
+                        <span className="line-clamp-2">{p.completionEmailTo}</span>
+                      </div>
+                    )}
                   </div>
 
                   <div className="mt-6 flex items-center justify-between pt-3 border-t border-border/50">
@@ -222,6 +265,15 @@ export function ProjectsClient() {
                     </Button>
 
                     <div className="flex items-center gap-1">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => updateCompletionEmail(p)}
+                        className="h-8 text-xs text-muted-foreground hover:text-primary px-2"
+                      >
+                        <Mail className="size-3.5 mr-1" />
+                        {p.completionEmailTo ? "Maili Düzenle" : "Mail Ekle"}
+                      </Button>
                       <Button
                         size="sm"
                         variant="ghost"

@@ -5,6 +5,14 @@ import { taskUpdateSchema } from "@/lib/api/validation";
 import { getPrisma } from "@/lib/db/prisma";
 import { taskInclude } from "@/lib/db/tasks";
 
+function nextDueDate(value: Date | null, frequency: string, interval: number) {
+  const next = new Date(value ?? Date.now());
+  if (frequency === "DAILY") next.setDate(next.getDate() + interval);
+  if (frequency === "WEEKLY") next.setDate(next.getDate() + interval * 7);
+  if (frequency === "MONTHLY") next.setMonth(next.getMonth() + interval);
+  return next;
+}
+
 export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = await ensureCurrentUser();
@@ -22,13 +30,26 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const parsed = taskUpdateSchema.safeParse(await req.json());
     if (!parsed.success) return badRequest(parsed.error.issues[0]?.message ?? "Geçersiz görev verisi");
     const prisma = getPrisma();
-    const existing = await prisma.task.findFirst({ where: { id, userId: user.id }, select: { id: true, status: true } });
+    const existing = await prisma.task.findFirst({
+      where: { id, userId: user.id },
+      select: {
+        id: true,
+        status: true,
+        approvalStatus: true,
+        recurrenceFrequency: true,
+        recurrenceInterval: true,
+      },
+    });
     if (!existing) return NextResponse.json({ error: "Görev bulunamadı" }, { status: 404 });
     const data = parsed.data;
 
     if (data.projectId) {
       const project = await prisma.project.findFirst({ where: { id: data.projectId, userId: user.id, isArchived: false }, select: { id: true } });
       if (!project) return badRequest("Proje bulunamadı");
+    }
+    if (data.assignedToId) {
+      const assignee = await prisma.user.findUnique({ where: { id: data.assignedToId }, select: { id: true } });
+      if (!assignee) return badRequest("Atanacak kullanıcı bulunamadı");
     }
     if (data.tagIds) {
       const unique = [...new Set(data.tagIds)];
@@ -45,6 +66,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         description: data.description,
         status: data.status,
         priority: data.priority,
+        assignedToId: data.assignedToId === undefined ? undefined : data.assignedToId || null,
+        approvalStatus:
+          data.status === "DONE" && existing.status !== "DONE" && existing.approvalStatus !== "NOT_REQUIRED"
+            ? "PENDING"
+            : data.approvalStatus,
+        approvalNote: data.approvalNote,
+        approvedAt: data.approvalStatus === "APPROVED" ? new Date() : data.approvalStatus ? null : undefined,
+        approvedById: data.approvalStatus === "APPROVED" ? user.id : data.approvalStatus ? null : undefined,
+        recurrenceFrequency: data.recurrenceFrequency,
+        recurrenceInterval: data.recurrenceInterval,
         projectId: data.projectId,
         dueDate: data.dueDate === undefined ? undefined : data.dueDate ? new Date(data.dueDate) : null,
         position: data.position,
@@ -75,6 +106,70 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         ]);
       } catch (err) {
         console.error("Failed to create completion notification / activity:", err);
+      }
+
+      try {
+        const { sendTaskCompletionEmail } = await import("@/lib/email/task-completion");
+        try {
+          const result = await sendTaskCompletionEmail({ task, user });
+          await prisma.mailDelivery.create({
+            data: {
+              userId: user.id,
+              taskId: id,
+              recipients: result.recipients,
+              subject: result.subject,
+              status: result.skipped ? "SKIPPED" : "SENT",
+            },
+          });
+        } catch (mailError) {
+          await prisma.mailDelivery.create({
+            data: {
+              userId: user.id,
+              taskId: id,
+              recipients: task.project?.completionEmailTo || process.env.TASK_COMPLETION_EMAIL_TO || "",
+              subject: `TaskFlow - Görev tamamlandı: ${task.title}`,
+              status: "FAILED",
+              error: mailError instanceof Error ? mailError.message : "Mail gönderimi başarısız",
+            },
+          });
+          throw mailError;
+        }
+      } catch (err) {
+        console.error("Failed to send task completion email:", err);
+      }
+
+      if (task.recurrenceFrequency !== "NONE") {
+        try {
+          const nextTask = await prisma.task.create({
+            data: {
+              userId: user.id,
+              title: task.title,
+              description: task.description,
+              status: "TODO",
+              priority: task.priority,
+              assignedToId: task.assignedToId,
+              projectId: task.projectId,
+              dueDate: nextDueDate(task.dueDate, task.recurrenceFrequency, task.recurrenceInterval),
+              recurrenceFrequency: task.recurrenceFrequency,
+              recurrenceInterval: task.recurrenceInterval,
+              recurrenceSourceTaskId: task.id,
+              approvalStatus: task.approvalStatus === "NOT_REQUIRED" ? "NOT_REQUIRED" : "PENDING",
+              position: Date.now(),
+              taskTags: task.taskTags.length
+                ? { create: task.taskTags.map(({ tag }) => ({ userId: user.id, tagId: tag.id })) }
+                : undefined,
+            },
+          });
+          const { logActivity } = await import("@/lib/notifications");
+          await logActivity({
+            userId: user.id,
+            taskId: nextTask.id,
+            action: "TASK_RECURRED",
+            details: `"${task.title}" için sıradaki tekrar görevi oluşturuldu.`,
+          });
+        } catch (err) {
+          console.error("Failed to create recurring task:", err);
+        }
       }
     } else if (existing.status === "DONE" && data.status && data.status !== "DONE") {
       try {

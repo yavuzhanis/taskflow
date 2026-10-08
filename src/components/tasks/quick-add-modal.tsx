@@ -13,7 +13,9 @@ import {
   CalendarDays,
   Command,
   Folder,
+  Repeat2,
   Tag,
+  UserRound,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -23,9 +25,11 @@ import { fetchJson } from "@/lib/utils";
 import { useUIStore } from "@/stores/ui-store";
 import type {
   ProjectDTO,
+  RecurrenceFrequency,
   TagDTO,
   TaskDTO,
   TaskPriority,
+  UserSummaryDTO,
 } from "@/types/task";
 
 export function QuickAddModal() {
@@ -59,6 +63,19 @@ export function QuickAddModal() {
     projectId,
     setProjectId,
   ] = useState("");
+
+  const [
+    assignedToId,
+    setAssignedToId,
+  ] = useState("");
+
+  const [
+    recurrenceFrequency,
+    setRecurrenceFrequency,
+  ] =
+    useState<RecurrenceFrequency>(
+      "NONE",
+    );
 
   const [
     tagIds,
@@ -119,6 +136,17 @@ export function QuickAddModal() {
         quickAddOpen,
     });
 
+  const users =
+    useQuery({
+      queryKey: ["users"],
+      queryFn: () =>
+        fetchJson<{
+          users: UserSummaryDTO[];
+        }>("/api/users"),
+      enabled:
+        quickAddOpen,
+    });
+
   const create =
     useMutation({
       mutationFn: () =>
@@ -135,6 +163,10 @@ export function QuickAddModal() {
             priority,
             projectId:
               projectId || null,
+            assignedToId:
+              assignedToId ||
+              null,
+            recurrenceFrequency,
             dueDate: dueDate
               ? new Date(
                   `${dueDate}T12:00:00`,
@@ -158,6 +190,10 @@ export function QuickAddModal() {
         setTitle("");
         setDueDate("");
         setProjectId("");
+        setAssignedToId("");
+        setRecurrenceFrequency(
+          "NONE",
+        );
         setTagIds([]);
         setPriority("NORMAL");
         setQuickAddOpen(false);
@@ -250,7 +286,7 @@ export function QuickAddModal() {
               className="h-14 w-full border-0 bg-transparent px-1 text-xl font-medium tracking-[-0.02em] outline-none placeholder:text-muted-foreground/55"
             />
 
-            <div className="mt-4 grid gap-2 sm:grid-cols-3">
+            <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
               <label className="relative">
                 <span className="sr-only">
                   Öncelik
@@ -309,6 +345,68 @@ export function QuickAddModal() {
                       </option>
                     ),
                   )}
+                </select>
+              </label>
+
+              <label className="relative">
+                <UserRound className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                <select
+                  value={assignedToId}
+                  onChange={(event) =>
+                    setAssignedToId(
+                      event.target.value,
+                    )
+                  }
+                  className="h-10 w-full appearance-none rounded-lg border border-border/70 bg-muted/25 pl-9 pr-3 text-xs outline-none transition hover:bg-muted/45 focus:ring-2 focus:ring-ring/40"
+                >
+                  <option value="">
+                    Atanmamış
+                  </option>
+
+                  {users.data?.users.map(
+                    (workspaceUser) => (
+                      <option
+                        key={
+                          workspaceUser.id
+                        }
+                        value={
+                          workspaceUser.id
+                        }
+                      >
+                        {workspaceUser.name ||
+                          workspaceUser.email}
+                      </option>
+                    ),
+                  )}
+                </select>
+              </label>
+
+              <label className="relative">
+                <Repeat2 className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                <select
+                  value={
+                    recurrenceFrequency
+                  }
+                  onChange={(event) =>
+                    setRecurrenceFrequency(
+                      event.target
+                        .value as RecurrenceFrequency,
+                    )
+                  }
+                  className="h-10 w-full appearance-none rounded-lg border border-border/70 bg-muted/25 pl-9 pr-3 text-xs outline-none transition hover:bg-muted/45 focus:ring-2 focus:ring-ring/40"
+                >
+                  <option value="NONE">
+                    Tekrar yok
+                  </option>
+                  <option value="DAILY">
+                    Günlük
+                  </option>
+                  <option value="WEEKLY">
+                    Haftalık
+                  </option>
+                  <option value="MONTHLY">
+                    Aylık
+                  </option>
                 </select>
               </label>
 

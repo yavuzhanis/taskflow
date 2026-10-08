@@ -3,7 +3,21 @@
 import { FormEvent, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, Check, MessageSquare, Plus, RotateCcw, Trash2, X } from "lucide-react";
+import {
+  Archive,
+  Check,
+  ExternalLink,
+  Mail,
+  MessageSquare,
+  Paperclip,
+  Plus,
+  Repeat2,
+  RotateCcw,
+  ShieldCheck,
+  Trash2,
+  UserRound,
+  X,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -12,17 +26,41 @@ import { fetchJson, toDateInputValue } from "@/lib/utils";
 import { useUIStore } from "@/stores/ui-store";
 import type {
   ProjectDTO,
+  RecurrenceFrequency,
   TagDTO,
+  TaskApprovalStatus,
   TaskDTO,
   TaskPriority,
   TaskStatus,
+  UserSummaryDTO,
 } from "@/types/task";
+
+const approvalLabels: Record<TaskApprovalStatus, string> = {
+  NOT_REQUIRED: "Onay gerekmiyor",
+  PENDING: "Onay bekliyor",
+  APPROVED: "Onaylandı",
+  REVISION_REQUESTED: "Revizyon istendi",
+};
+
+const recurrenceLabels: Record<RecurrenceFrequency, string> = {
+  NONE: "Tekrar yok",
+  DAILY: "Günlük",
+  WEEKLY: "Haftalık",
+  MONTHLY: "Aylık",
+};
+
+const mailStatusConfig = {
+  SENT: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+  SKIPPED: "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300",
+  FAILED: "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300",
+} as const;
 
 type TaskDetailEditorProps = {
   task: TaskDTO;
   taskDetailId: string;
   projects: ProjectDTO[];
   tags: TagDTO[];
+  users: UserSummaryDTO[];
   onClose: () => void;
 };
 
@@ -31,6 +69,7 @@ function TaskDetailEditor({
   taskDetailId,
   projects,
   tags,
+  users,
   onClose,
 }: TaskDetailEditorProps) {
   const qc = useQueryClient();
@@ -47,6 +86,18 @@ function TaskDetailEditor({
   const [tagIds, setTagIds] = useState<string[]>(
     task.taskTags.map(({ tag }) => tag.id),
   );
+  const [assignedToId, setAssignedToId] = useState(task.assignedToId ?? "");
+  const [approvalStatus, setApprovalStatus] = useState<TaskApprovalStatus>(
+    task.approvalStatus,
+  );
+  const [approvalNote, setApprovalNote] = useState(task.approvalNote ?? "");
+  const [recurrenceFrequency, setRecurrenceFrequency] =
+    useState<RecurrenceFrequency>(task.recurrenceFrequency);
+  const [recurrenceInterval, setRecurrenceInterval] = useState(
+    String(task.recurrenceInterval ?? 1),
+  );
+  const [attachmentName, setAttachmentName] = useState("");
+  const [attachmentUrl, setAttachmentUrl] = useState("");
   const [subtaskTitle, setSubtaskTitle] = useState("");
   const [comment, setComment] = useState("");
 
@@ -71,6 +122,11 @@ function TaskDetailEditor({
             ? new Date(`${dueDate}T12:00:00`).toISOString()
             : null,
           tagIds,
+          assignedToId: assignedToId || null,
+          approvalStatus,
+          approvalNote: approvalNote.trim() || null,
+          recurrenceFrequency,
+          recurrenceInterval: Math.max(1, Number(recurrenceInterval) || 1),
         }),
       }),
     onSuccess: () => {
@@ -82,6 +138,39 @@ function TaskDetailEditor({
     },
     onError: (error) => toast.error(error.message),
   });
+
+  const addAttachment = useMutation({
+    mutationFn: () =>
+      fetchJson(`/api/tasks/${taskDetailId}/attachments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: attachmentName.trim(),
+          url: attachmentUrl.trim(),
+        }),
+      }),
+    onSuccess: () => {
+      setAttachmentName("");
+      setAttachmentUrl("");
+      invalidate();
+      toast.success("Ek bağlantı eklendi");
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const deleteAttachment = (attachmentId: string) => {
+    fetchJson(
+      `/api/tasks/${taskDetailId}/attachments?attachmentId=${encodeURIComponent(
+        attachmentId,
+      )}`,
+      { method: "DELETE" },
+    )
+      .then(() => {
+        invalidate();
+        toast.success("Ek kaldırıldı");
+      })
+      .catch((error) => toast.error(error.message));
+  };
 
   const addSubtask = useMutation({
     mutationFn: () =>
@@ -261,6 +350,97 @@ function TaskDetailEditor({
             ))}
           </div>
         ) : null}
+
+        <div className="grid gap-3 rounded-xl border bg-muted/20 p-4 sm:grid-cols-2">
+          <label className="space-y-1.5">
+            <span className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
+              <UserRound className="size-3.5" />
+              Atanan kişi
+            </span>
+            <select
+              value={assignedToId}
+              onChange={(event) => setAssignedToId(event.target.value)}
+              className="h-10 w-full rounded-xl border bg-background px-3 text-sm"
+            >
+              <option value="">Atanmamış</option>
+              {users.map((workspaceUser) => (
+                <option key={workspaceUser.id} value={workspaceUser.id}>
+                  {workspaceUser.name || workspaceUser.email}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="space-y-1.5">
+            <span className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
+              <ShieldCheck className="size-3.5" />
+              Onay durumu
+            </span>
+            <select
+              value={approvalStatus}
+              onChange={(event) =>
+                setApprovalStatus(event.target.value as TaskApprovalStatus)
+              }
+              className="h-10 w-full rounded-xl border bg-background px-3 text-sm"
+            >
+              {Object.entries(approvalLabels).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="space-y-1.5">
+            <span className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
+              <Repeat2 className="size-3.5" />
+              Tekrar
+            </span>
+            <select
+              value={recurrenceFrequency}
+              onChange={(event) =>
+                setRecurrenceFrequency(
+                  event.target.value as RecurrenceFrequency,
+                )
+              }
+              className="h-10 w-full rounded-xl border bg-background px-3 text-sm"
+            >
+              {Object.entries(recurrenceLabels).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="space-y-1.5">
+            <span className="text-xs font-semibold text-muted-foreground">
+              Tekrar aralığı
+            </span>
+            <input
+              type="number"
+              min={1}
+              max={24}
+              value={recurrenceInterval}
+              disabled={recurrenceFrequency === "NONE"}
+              onChange={(event) => setRecurrenceInterval(event.target.value)}
+              className="h-10 w-full rounded-xl border bg-background px-3 text-sm disabled:opacity-50"
+            />
+          </label>
+
+          <label className="space-y-1.5 sm:col-span-2">
+            <span className="text-xs font-semibold text-muted-foreground">
+              Onay notu
+            </span>
+            <textarea
+              rows={3}
+              value={approvalNote}
+              onChange={(event) => setApprovalNote(event.target.value)}
+              placeholder="Onay veya revizyon gerekçesi..."
+              className="w-full resize-y rounded-xl border bg-background p-3 text-sm outline-none focus:ring-2 focus:ring-ring"
+            />
+          </label>
+        </div>
       </section>
 
       <section>
@@ -284,6 +464,88 @@ function TaskDetailEditor({
             <ReactMarkdown>{description}</ReactMarkdown>
           </div>
         ) : null}
+      </section>
+
+      <section>
+        <h3 className="flex items-center gap-2 font-semibold">
+          <Paperclip className="size-4" />
+          Ekler
+        </h3>
+
+        <form
+          className="mt-3 grid gap-2 sm:grid-cols-[1fr_1.4fr_auto]"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (attachmentName.trim() && attachmentUrl.trim()) {
+              addAttachment.mutate();
+            }
+          }}
+        >
+          <input
+            value={attachmentName}
+            onChange={(event) => setAttachmentName(event.target.value)}
+            placeholder="Ek adı"
+            className="h-10 rounded-xl border bg-background px-3 text-sm outline-none"
+          />
+          <input
+            value={attachmentUrl}
+            onChange={(event) => setAttachmentUrl(event.target.value)}
+            placeholder="https://..."
+            className="h-10 rounded-xl border bg-background px-3 text-sm outline-none"
+          />
+          <Button
+            type="submit"
+            size="icon"
+            disabled={
+              addAttachment.isPending ||
+              !attachmentName.trim() ||
+              !attachmentUrl.trim()
+            }
+            aria-label="Ek bağlantı ekle"
+          >
+            <Plus className="size-4" />
+          </Button>
+        </form>
+
+        <div className="mt-3 space-y-2">
+          {task.attachments.length ? (
+            task.attachments.map((attachment) => (
+              <div
+                key={attachment.id}
+                className="flex items-center gap-3 rounded-xl border p-3 text-sm"
+              >
+                <Paperclip className="size-4 shrink-0 text-muted-foreground" />
+                <div className="min-w-0 flex-1">
+                  <a
+                    href={attachment.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex max-w-full items-center gap-1.5 font-medium text-primary hover:underline"
+                  >
+                    <span className="truncate">{attachment.name}</span>
+                    <ExternalLink className="size-3.5 shrink-0" />
+                  </a>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {new Date(attachment.createdAt).toLocaleString("tr-TR")}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => deleteAttachment(attachment.id)}
+                  aria-label="Eki kaldır"
+                >
+                  <Trash2 className="size-4" />
+                </Button>
+              </div>
+            ))
+          ) : (
+            <p className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
+              Henüz ek bağlantı yok.
+            </p>
+          )}
+        </div>
       </section>
 
       <section>
@@ -353,6 +615,50 @@ function TaskDetailEditor({
               </Button>
             </div>
           ))}
+        </div>
+      </section>
+
+      <section>
+        <h3 className="flex items-center gap-2 font-semibold">
+          <Mail className="size-4" />
+          Mail gönderim geçmişi
+        </h3>
+
+        <div className="mt-3 space-y-2">
+          {task.mailDeliveries.length ? (
+            task.mailDeliveries.map((delivery) => (
+              <div
+                key={delivery.id}
+                className="rounded-xl border p-3 text-sm"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-medium">{delivery.subject}</span>
+                  <span
+                    className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${
+                      mailStatusConfig[delivery.status]
+                    }`}
+                  >
+                    {delivery.status}
+                  </span>
+                </div>
+                <p className="mt-1 break-words text-xs text-muted-foreground">
+                  {delivery.recipients || "Alıcı yok"}
+                </p>
+                {delivery.error ? (
+                  <p className="mt-1 text-xs text-destructive">
+                    {delivery.error}
+                  </p>
+                ) : null}
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {new Date(delivery.createdAt).toLocaleString("tr-TR")}
+                </p>
+              </div>
+            ))
+          ) : (
+            <p className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
+              Bu görev için henüz mail kaydı yok.
+            </p>
+          )}
         </div>
       </section>
 
@@ -456,6 +762,12 @@ export function TaskDetailModal() {
     enabled: Boolean(taskDetailId),
   });
 
+  const usersQuery = useQuery({
+    queryKey: ["users"],
+    queryFn: () => fetchJson<{ users: UserSummaryDTO[] }>("/api/users"),
+    enabled: Boolean(taskDetailId),
+  });
+
   if (!taskDetailId) return null;
 
   const task = taskQuery.data?.task;
@@ -500,6 +812,7 @@ export function TaskDetailModal() {
             taskDetailId={taskDetailId}
             projects={projectsQuery.data?.projects ?? []}
             tags={tagsQuery.data?.tags ?? []}
+            users={usersQuery.data?.users ?? []}
             onClose={close}
           />
         ) : (
