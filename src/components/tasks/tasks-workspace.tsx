@@ -9,15 +9,25 @@ import {
 } from "@tanstack/react-query";
 import {
   Archive,
+  Bookmark,
+  BookmarkPlus,
+  CalendarDays,
   Check,
+  CheckSquare2,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Columns3,
+  Download,
+  FileSpreadsheet,
   Filter,
   List,
   Plus,
   RotateCcw,
+  Save,
   SlidersHorizontal,
   Trash2,
+  X,
 } from "lucide-react";
 import {
   useMemo,
@@ -38,6 +48,7 @@ import type {
   ProjectDTO,
   TagDTO,
   TaskDTO,
+  TaskPriority,
   TaskStatus,
   TasksResponse,
 } from "@/types/task";
@@ -74,11 +85,77 @@ type Mode =
   | "archived"
   | "trash";
 
+type ViewMode =
+  | "list"
+  | "kanban"
+  | "calendar";
+
 type ReorderItem = {
   id: string;
   status: TaskStatus;
   position: number;
 };
+
+type BulkAction =
+  | {
+      action: "status";
+      status: TaskStatus;
+    }
+  | {
+      action:
+        | "archive"
+        | "trash"
+        | "restoreArchive"
+        | "restoreTrash"
+        | "deletePermanent";
+    };
+
+type SavedViewDTO = {
+  id: string;
+  name: string;
+  filters: {
+    mode: Mode;
+    smart: string;
+    status: string;
+    projectId: string;
+    tagId: string;
+    sort: string;
+    view: ViewMode;
+  };
+};
+
+type TaskTemplateDTO = {
+  id: string;
+  name: string;
+  title: string;
+  description: string | null;
+  status: TaskStatus;
+  priority: TaskPriority;
+  dueOffsetDays: number | null;
+};
+
+const weekDays = [
+  "Pzt",
+  "Sal",
+  "Çar",
+  "Per",
+  "Cum",
+  "Cmt",
+  "Paz",
+];
+
+const monthFormatter =
+  new Intl.DateTimeFormat(
+    "tr-TR",
+    {
+      month: "long",
+      year: "numeric",
+    },
+  );
+
+function dateKey(value: Date) {
+  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
+}
 
 export function TasksWorkspace({
   initialSearch = "",
@@ -112,9 +189,9 @@ export function TasksWorkspace({
   const [
     viewOverride,
     setViewOverride,
-  ] = useState<
-    "list" | "kanban" | null
-  >(null);
+  ] = useState<ViewMode | null>(
+    null,
+  );
 
   const [
     smart,
@@ -175,6 +252,33 @@ export function TasksWorkspace({
     sort,
     setSort,
   ] = useState("created");
+
+  const [
+    selectedIds,
+    setSelectedIds,
+  ] = useState<Set<string>>(
+    () => new Set(),
+  );
+
+  const [
+    calendarMonth,
+    setCalendarMonth,
+  ] = useState(
+    () => new Date(),
+  );
+
+  const [
+    selectedSavedViewId,
+    setSelectedSavedViewId,
+  ] = useState("");
+
+  const [
+    selectedTemplateId,
+    setSelectedTemplateId,
+  ] = useState("");
+
+  const clearSelection = () =>
+    setSelectedIds(new Set());
 
   const queryString =
     new URLSearchParams({
@@ -290,9 +394,30 @@ export function TasksWorkspace({
         }>("/api/tags"),
     });
 
+  const savedViews =
+    useQuery({
+      queryKey: [
+        "saved-views",
+      ],
+      queryFn: () =>
+        fetchJson<{
+          views: SavedViewDTO[];
+        }>("/api/saved-views"),
+    });
+
+  const templates =
+    useQuery({
+      queryKey: [
+        "task-templates",
+      ],
+      queryFn: () =>
+        fetchJson<{
+          templates: TaskTemplateDTO[];
+        }>("/api/task-templates"),
+    });
+
   const preferredView:
-    | "list"
-    | "kanban" =
+    ViewMode =
     preferences.data
       ?.preferences
       .defaultView ===
@@ -373,6 +498,145 @@ export function TasksWorkspace({
 
       return items;
     }, [rawTasks, sort]);
+
+  const visibleTaskIds =
+    useMemo(
+      () =>
+        tasks.map(
+          (task) => task.id,
+        ),
+      [tasks],
+    );
+
+  const calendarDays =
+    useMemo(() => {
+      const firstDay =
+        new Date(
+          calendarMonth.getFullYear(),
+          calendarMonth.getMonth(),
+          1,
+        );
+      const mondayOffset =
+        (firstDay.getDay() + 6) %
+        7;
+      const start =
+        new Date(firstDay);
+      start.setDate(
+        firstDay.getDate() -
+          mondayOffset,
+      );
+
+      return Array.from(
+        { length: 42 },
+        (_, index) => {
+          const date =
+            new Date(start);
+          date.setDate(
+            start.getDate() +
+              index,
+          );
+          return date;
+        },
+      );
+    }, [calendarMonth]);
+
+  const tasksByDate =
+    useMemo(() => {
+      const map =
+        new Map<
+          string,
+          TaskDTO[]
+        >();
+
+      tasks.forEach((task) => {
+        if (!task.dueDate) {
+          return;
+        }
+
+        const key = dateKey(
+          new Date(
+            task.dueDate,
+          ),
+        );
+        const list =
+          map.get(key) ?? [];
+        list.push(task);
+        map.set(key, list);
+      });
+
+      return map;
+    }, [tasks]);
+
+  const selectedCount =
+    selectedIds.size;
+
+  const selectedSavedView =
+    savedViews.data?.views.find(
+      (item) =>
+        item.id ===
+        selectedSavedViewId,
+    );
+
+  const selectedTemplate =
+    templates.data?.templates.find(
+      (item) =>
+        item.id ===
+        selectedTemplateId,
+    );
+
+  const allVisibleSelected =
+    visibleTaskIds.length >
+      0 &&
+    visibleTaskIds.every((id) =>
+      selectedIds.has(id),
+    );
+
+  const toggleTaskSelection = (
+    id: string,
+  ) => {
+    setSelectedIds(
+      (current) => {
+        const next =
+          new Set(current);
+
+        if (next.has(id)) {
+          next.delete(id);
+        } else {
+          next.add(id);
+        }
+
+        return next;
+      },
+    );
+  };
+
+  const toggleVisibleSelection =
+    () => {
+      setSelectedIds(
+        (current) => {
+          const next =
+            new Set(current);
+
+          if (
+            allVisibleSelected
+          ) {
+            visibleTaskIds.forEach(
+              (id) =>
+                next.delete(
+                  id,
+                ),
+            );
+          } else {
+            visibleTaskIds.forEach(
+              (id) =>
+                next.add(id),
+            );
+          }
+
+          return next;
+        },
+      );
+    };
 
   const updateTaskInCache = (
     updater: (
@@ -674,7 +938,7 @@ export function TasksWorkspace({
             "application/json",
         },
         body: JSON.stringify({
-          deleted: false,
+          restore: true,
         }),
       },
     )
@@ -728,6 +992,287 @@ export function TasksWorkspace({
       );
   };
 
+  const bulk =
+    useMutation({
+      mutationFn: (
+        payload: BulkAction & {
+          ids: string[];
+        },
+      ) =>
+        fetchJson<{
+          count: number;
+        }>(
+          "/api/tasks/bulk",
+          {
+            method: "PATCH",
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+            body: JSON.stringify(
+              payload,
+            ),
+          },
+        ),
+
+      onSuccess: (
+        data,
+        variables,
+      ) => {
+        setSelectedIds(
+          new Set(),
+        );
+
+        void qc.invalidateQueries({
+          queryKey: ["tasks"],
+        });
+
+        void qc.invalidateQueries({
+          queryKey: [
+            "dashboard",
+          ],
+        });
+
+        void qc.invalidateQueries({
+          queryKey: [
+            "notifications",
+          ],
+        });
+
+        if (
+          variables.action ===
+            "trash" ||
+          variables.action ===
+            "deletePermanent"
+        ) {
+          playTrashSound();
+        }
+
+        if (
+          variables.action ===
+            "status" &&
+          variables.status ===
+            "DONE"
+        ) {
+          playSuccessChime();
+        }
+
+        toast.success(
+          `${data.count} görev güncellendi`,
+        );
+      },
+
+      onError: (error) =>
+        toast.error(
+          error.message,
+        ),
+    });
+
+  const runBulkAction = (
+    action: BulkAction,
+  ) => {
+    const ids = Array.from(
+      selectedIds,
+    );
+
+    if (!ids.length) {
+      return;
+    }
+
+    if (
+      action.action ===
+        "deletePermanent" &&
+      !confirm(
+        "Seçili görevler kalıcı olarak silinecek. Bu işlem geri alınamaz.",
+      )
+    ) {
+      return;
+    }
+
+    bulk.mutate({
+      ...action,
+      ids,
+    });
+  };
+
+  const saveView =
+    useMutation({
+      mutationFn: (
+        name: string,
+      ) =>
+        fetchJson<{
+          view: SavedViewDTO;
+        }>(
+          "/api/saved-views",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+            body: JSON.stringify({
+              name,
+              filters: {
+                mode,
+                smart,
+                status,
+                projectId,
+                tagId,
+                sort,
+                view,
+              },
+            }),
+          },
+        ),
+      onSuccess: () => {
+        setSelectedSavedViewId("");
+        void qc.invalidateQueries({
+          queryKey: [
+            "saved-views",
+          ],
+        });
+        toast.success(
+          "Görünüm kaydedildi",
+        );
+      },
+      onError: (error) =>
+        toast.error(
+          error.message,
+        ),
+    });
+
+  const deleteView =
+    useMutation({
+      mutationFn: (id: string) =>
+        fetchJson(
+          `/api/saved-views?id=${encodeURIComponent(id)}`,
+          {
+            method: "DELETE",
+          },
+        ),
+      onSuccess: () => {
+        void qc.invalidateQueries({
+          queryKey: [
+            "saved-views",
+          ],
+        });
+        toast.success(
+          "Görünüm silindi",
+        );
+      },
+      onError: (error) =>
+        toast.error(
+          error.message,
+        ),
+    });
+
+  const createFromTemplate =
+    useMutation({
+      mutationFn: (
+        template: TaskTemplateDTO,
+      ) => {
+        const dueDate =
+          template.dueOffsetDays ===
+            null ||
+          template.dueOffsetDays ===
+            undefined
+            ? null
+            : (() => {
+                const date =
+                  new Date();
+                date.setDate(
+                  date.getDate() +
+                    template.dueOffsetDays,
+                );
+                date.setHours(
+                  12,
+                  0,
+                  0,
+                  0,
+                );
+                return date.toISOString();
+              })();
+
+        return fetchJson<{
+          task: TaskDTO;
+        }>("/api/tasks", {
+          method: "POST",
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+          body: JSON.stringify({
+            title:
+              template.title,
+            description:
+              template.description,
+            priority:
+              template.priority,
+            status:
+              template.status,
+            dueDate,
+          }),
+        });
+      },
+      onSuccess: () => {
+        void qc.invalidateQueries({
+          queryKey: ["tasks"],
+        });
+        void qc.invalidateQueries({
+          queryKey: [
+            "dashboard",
+          ],
+        });
+        toast.success(
+          "Şablondan görev oluşturuldu",
+        );
+      },
+      onError: (error) =>
+        toast.error(
+          error.message,
+        ),
+    });
+
+  const handleSaveView = () => {
+    const name = prompt(
+      "Bu görünüm için bir ad yazın",
+    )?.trim();
+
+    if (name) {
+      saveView.mutate(name);
+    }
+  };
+
+  const applySavedView = (
+    savedView: SavedViewDTO,
+  ) => {
+    clearSelection();
+    setMode(
+      savedView.filters.mode,
+    );
+    setSmart(
+      savedView.filters.smart,
+    );
+    setStatus(
+      savedView.filters.status,
+    );
+    setProjectId(
+      savedView.filters.projectId,
+    );
+    setTagId(
+      savedView.filters.tagId,
+    );
+    setSort(
+      savedView.filters.sort,
+    );
+    setViewOverride(
+      savedView.filters.view,
+    );
+    toast.success(
+      "Görünüm uygulandı",
+    );
+  };
+
   const emptyTrash = () => {
     if (
       !confirm(
@@ -765,6 +1310,32 @@ export function TasksWorkspace({
 
   const filterClass =
     "h-9 rounded-lg border border-border/70 bg-background px-3 text-xs text-muted-foreground outline-none transition hover:bg-muted/40 focus:border-foreground/20 focus:ring-2 focus:ring-ring/30";
+
+  const buildExportHref = (
+    format: "csv" | "excel",
+  ) => {
+    const params =
+      new URLSearchParams(
+        queryString,
+      );
+
+    params.set(
+      "format",
+      format,
+    );
+
+    params.set(
+      "scope",
+      "view",
+    );
+
+    params.set(
+      "sort",
+      sort,
+    );
+
+    return `/api/export?${params.toString()}`;
+  };
 
   return (
     <div className="mx-auto w-full max-w-[1600px] px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
@@ -825,9 +1396,10 @@ export function TasksWorkspace({
               <button
                 key={value}
                 type="button"
-                onClick={() =>
-                  setMode(value)
-                }
+                onClick={() => {
+                  clearSelection();
+                  setMode(value);
+                }}
                 className={`h-8 rounded-md px-3 text-xs font-medium transition ${
                   mode === value
                     ? "bg-background text-foreground shadow-sm"
@@ -851,12 +1423,13 @@ export function TasksWorkspace({
                 value={smart}
                 onChange={(
                   event,
-                ) =>
+                ) => {
+                  clearSelection();
                   setSmart(
                     event.target
                       .value,
-                  )
-                }
+                  );
+                }}
                 className={`${filterClass} pl-8`}
               >
                 <option value="">
@@ -877,11 +1450,12 @@ export function TasksWorkspace({
 
           <select
             value={status}
-            onChange={(event) =>
+            onChange={(event) => {
+              clearSelection();
               setStatus(
                 event.target.value,
-              )
-            }
+              );
+            }}
             className={
               filterClass
             }
@@ -902,11 +1476,12 @@ export function TasksWorkspace({
 
           <select
             value={projectId}
-            onChange={(event) =>
+            onChange={(event) => {
+              clearSelection();
               setProjectId(
                 event.target.value,
-              )
-            }
+              );
+            }}
             className={
               filterClass
             }
@@ -933,11 +1508,12 @@ export function TasksWorkspace({
 
           <select
             value={tagId}
-            onChange={(event) =>
+            onChange={(event) => {
+              clearSelection();
               setTagId(
                 event.target.value,
-              )
-            }
+              );
+            }}
             className={
               filterClass
             }
@@ -1028,8 +1604,64 @@ export function TasksWorkspace({
             >
               <Columns3 className="size-3.5" />
             </button>
+
+            <button
+              type="button"
+              onClick={() =>
+                setViewOverride(
+                  "calendar",
+                )
+              }
+              className={`grid size-8 place-items-center rounded-md transition ${
+                view ===
+                "calendar"
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+              aria-label="Takvim görünümü"
+            >
+              <CalendarDays className="size-3.5" />
+            </button>
           </div>
         )}
+
+        <div className="flex gap-2">
+          <Button
+            asChild
+            size="sm"
+            variant="outline"
+            className="h-8 px-2.5 text-xs"
+          >
+            <a
+              href={buildExportHref(
+                "csv",
+              )}
+              download
+              title="Filtreli CSV indir"
+            >
+              <Download className="size-3.5" />
+              CSV
+            </a>
+          </Button>
+
+          <Button
+            asChild
+            size="sm"
+            variant="outline"
+            className="h-8 px-2.5 text-xs"
+          >
+            <a
+              href={buildExportHref(
+                "excel",
+              )}
+              download
+              title="Filtreli Excel indir"
+            >
+              <FileSpreadsheet className="size-3.5 text-emerald-500" />
+              Excel
+            </a>
+          </Button>
+        </div>
 
         {mode === "trash" && rawTasks.length > 0 && (
           <Button
@@ -1042,6 +1674,142 @@ export function TasksWorkspace({
             Çöpü Boşalt ({rawTasks.length})
           </Button>
         )}
+      </div>
+
+      <div className="mt-3 flex flex-col gap-2 rounded-xl border border-border/70 bg-card/40 p-2.5 lg:flex-row lg:items-center">
+        <div className="flex flex-1 flex-wrap gap-2">
+          <div className="relative">
+            <Bookmark className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <select
+              value={
+                selectedSavedViewId
+              }
+              onChange={(event) =>
+                setSelectedSavedViewId(
+                  event.target.value,
+                )
+              }
+              className={`${filterClass} min-w-[180px] pl-9`}
+            >
+              <option value="">
+                Kayıtlı görünüm
+              </option>
+              {savedViews.data?.views.map(
+                (item) => (
+                  <option
+                    key={item.id}
+                    value={item.id}
+                  >
+                    {item.name}
+                  </option>
+                ),
+              )}
+            </select>
+          </div>
+
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={
+              !selectedSavedView
+            }
+            onClick={() => {
+              if (
+                selectedSavedView
+              ) {
+                applySavedView(
+                  selectedSavedView,
+                );
+              }
+            }}
+          >
+            Uygula
+          </Button>
+
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={
+              !selectedSavedView ||
+              deleteView.isPending
+            }
+            onClick={() => {
+              if (
+                selectedSavedView
+              ) {
+                deleteView.mutate(
+                  selectedSavedView.id,
+                );
+              }
+            }}
+          >
+            Sil
+          </Button>
+
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={
+              saveView.isPending
+            }
+            onClick={handleSaveView}
+          >
+            <BookmarkPlus className="size-3.5" />
+            Görünümü kaydet
+          </Button>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <div className="relative">
+            <Save className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <select
+              value={
+                selectedTemplateId
+              }
+              onChange={(event) =>
+                setSelectedTemplateId(
+                  event.target.value,
+                )
+              }
+              className={`${filterClass} min-w-[190px] pl-9`}
+            >
+              <option value="">
+                Görev şablonu
+              </option>
+              {templates.data?.templates.map(
+                (template) => (
+                  <option
+                    key={template.id}
+                    value={template.id}
+                  >
+                    {template.name}
+                  </option>
+                ),
+              )}
+            </select>
+          </div>
+
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={
+              !selectedTemplate ||
+              createFromTemplate.isPending
+            }
+            onClick={() => {
+              if (
+                selectedTemplate
+              ) {
+                createFromTemplate.mutate(
+                  selectedTemplate,
+                );
+              }
+            }}
+          >
+            <Plus className="size-3.5" />
+            Oluştur
+          </Button>
+        </div>
       </div>
 
       <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
@@ -1070,6 +1838,203 @@ export function TasksWorkspace({
         )}
       </div>
 
+      {selectedCount > 0 && (
+        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-border/70 bg-card/80 p-2.5 shadow-sm">
+          <div className="mr-1 inline-flex items-center gap-2 rounded-lg bg-muted/45 px-3 py-1.5 text-xs font-medium">
+            <CheckSquare2 className="size-3.5 text-primary" />
+            {selectedCount} görev seçildi
+          </div>
+
+          {mode ===
+            "active" && (
+            <>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={
+                  bulk.isPending
+                }
+                onClick={() =>
+                  runBulkAction({
+                    action:
+                      "status",
+                    status:
+                      "TODO",
+                  })
+                }
+              >
+                Yapılacak
+              </Button>
+
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={
+                  bulk.isPending
+                }
+                onClick={() =>
+                  runBulkAction({
+                    action:
+                      "status",
+                    status:
+                      "IN_PROGRESS",
+                  })
+                }
+              >
+                Devam ediyor
+              </Button>
+
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={
+                  bulk.isPending
+                }
+                onClick={() =>
+                  runBulkAction({
+                    action:
+                      "status",
+                    status:
+                      "DONE",
+                  })
+                }
+              >
+                <Check className="size-3.5" />
+                Tamamla
+              </Button>
+
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={
+                  bulk.isPending
+                }
+                onClick={() =>
+                  runBulkAction({
+                    action:
+                      "archive",
+                  })
+                }
+              >
+                <Archive className="size-3.5" />
+                Arşivle
+              </Button>
+
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={
+                  bulk.isPending
+                }
+                onClick={() =>
+                  runBulkAction({
+                    action:
+                      "trash",
+                  })
+                }
+              >
+                <Trash2 className="size-3.5" />
+                Çöpe taşı
+              </Button>
+            </>
+          )}
+
+          {mode ===
+            "archived" && (
+            <>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={
+                  bulk.isPending
+                }
+                onClick={() =>
+                  runBulkAction({
+                    action:
+                      "restoreArchive",
+                  })
+                }
+              >
+                <RotateCcw className="size-3.5" />
+                Arşivden çıkar
+              </Button>
+
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={
+                  bulk.isPending
+                }
+                onClick={() =>
+                  runBulkAction({
+                    action:
+                      "trash",
+                  })
+                }
+              >
+                <Trash2 className="size-3.5" />
+                Çöpe taşı
+              </Button>
+            </>
+          )}
+
+          {mode ===
+            "trash" && (
+            <>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={
+                  bulk.isPending
+                }
+                onClick={() =>
+                  runBulkAction({
+                    action:
+                      "restoreTrash",
+                  })
+                }
+              >
+                <RotateCcw className="size-3.5" />
+                Geri yükle
+              </Button>
+
+              <Button
+                size="sm"
+                variant="destructive"
+                disabled={
+                  bulk.isPending
+                }
+                onClick={() =>
+                  runBulkAction({
+                    action:
+                      "deletePermanent",
+                  })
+                }
+              >
+                <Trash2 className="size-3.5" />
+                Kalıcı sil
+              </Button>
+            </>
+          )}
+
+          <Button
+            size="sm"
+            variant="ghost"
+            className="ml-auto"
+            disabled={bulk.isPending}
+            onClick={() =>
+              setSelectedIds(
+                new Set(),
+              )
+            }
+            aria-label="Seçimi temizle"
+          >
+            <X className="size-3.5" />
+            Temizle
+          </Button>
+        </div>
+      )}
+
       <section className="mt-4">
         {tasksQ.isLoading ? (
           <div className="space-y-2">
@@ -1097,6 +2062,140 @@ export function TasksWorkspace({
             }
           />
         ) : view ===
+            "calendar" &&
+          mode === "active" ? (
+          <div className="overflow-hidden rounded-xl border border-border/70 bg-card/50">
+            <div className="flex items-center justify-between border-b border-border/70 px-3 py-2.5">
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                className="size-8"
+                onClick={() =>
+                  setCalendarMonth(
+                    (current) =>
+                      new Date(
+                        current.getFullYear(),
+                        current.getMonth() -
+                          1,
+                        1,
+                      ),
+                  )
+                }
+                aria-label="Önceki ay"
+              >
+                <ChevronLeft className="size-4" />
+              </Button>
+
+              <div className="text-sm font-semibold capitalize">
+                {monthFormatter.format(
+                  calendarMonth,
+                )}
+              </div>
+
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                className="size-8"
+                onClick={() =>
+                  setCalendarMonth(
+                    (current) =>
+                      new Date(
+                        current.getFullYear(),
+                        current.getMonth() +
+                          1,
+                        1,
+                      ),
+                  )
+                }
+                aria-label="Sonraki ay"
+              >
+                <ChevronRight className="size-4" />
+              </Button>
+            </div>
+
+            <div className="grid grid-cols-7 border-b border-border/70 bg-muted/20 text-center text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+              {weekDays.map((day) => (
+                <div
+                  key={day}
+                  className="px-2 py-2"
+                >
+                  {day}
+                </div>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-7">
+              {calendarDays.map((day) => {
+                const key =
+                  dateKey(day);
+                const dayTasks =
+                  tasksByDate.get(
+                    key,
+                  ) ?? [];
+                const isCurrentMonth =
+                  day.getMonth() ===
+                  calendarMonth.getMonth();
+                const isToday =
+                  key ===
+                  dateKey(new Date());
+
+                return (
+                  <div
+                    key={key}
+                    className={`min-h-[118px] border-b border-r border-border/60 p-2 last:border-r-0 ${
+                      isCurrentMonth
+                        ? "bg-background/35"
+                        : "bg-muted/15 text-muted-foreground/65"
+                    }`}
+                  >
+                    <div
+                      className={`mb-2 flex size-6 items-center justify-center rounded-full text-[11px] font-semibold ${
+                        isToday
+                          ? "bg-foreground text-background"
+                          : ""
+                      }`}
+                    >
+                      {day.getDate()}
+                    </div>
+
+                    <div className="space-y-1">
+                      {dayTasks
+                        .slice(0, 3)
+                        .map((task) => (
+                          <button
+                            key={
+                              task.id
+                            }
+                            type="button"
+                            onClick={() =>
+                              setTaskDetailId(
+                                task.id,
+                              )
+                            }
+                            className="block w-full truncate rounded-md border border-border/60 bg-card px-2 py-1 text-left text-[11px] font-medium text-foreground transition hover:border-primary/40 hover:bg-muted/40"
+                          >
+                            {task.title}
+                          </button>
+                        ))}
+
+                      {dayTasks.length >
+                        3 && (
+                        <div className="px-1 text-[10px] text-muted-foreground">
+                          +
+                          {dayTasks.length -
+                            3}{" "}
+                          görev
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : view ===
             "kanban" &&
           mode === "active" ? (
           <div className="overflow-x-auto pb-3">
@@ -1117,6 +2216,19 @@ export function TasksWorkspace({
               <table className="w-full min-w-[900px] text-left text-sm">
                 <thead className="border-b border-border/70 bg-muted/20 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
                   <tr>
+                    <th className="w-11 px-4 py-3">
+                      <input
+                        type="checkbox"
+                        checked={
+                          allVisibleSelected
+                        }
+                        onChange={
+                          toggleVisibleSelection
+                        }
+                        aria-label="Görünen görevleri seç"
+                        className="size-4 rounded border-border accent-primary"
+                      />
+                    </th>
                     <th className="px-4 py-3">
                       Görev
                     </th>
@@ -1165,6 +2277,27 @@ export function TasksWorkspace({
                             : ""
                         }`}
                       >
+                        <td className="px-4 py-3.5">
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.has(
+                              task.id,
+                            )}
+                            onClick={(
+                              event,
+                            ) =>
+                              event.stopPropagation()
+                            }
+                            onChange={() =>
+                              toggleTaskSelection(
+                                task.id,
+                              )
+                            }
+                            aria-label={`${task.title} görevini seç`}
+                            className="size-4 rounded border-border accent-primary"
+                          />
+                        </td>
+
                         <td className="px-4 py-3.5">
                           <div className="flex items-center gap-2.5">
                             {mode === "active" && (

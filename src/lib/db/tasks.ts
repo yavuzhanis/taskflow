@@ -6,15 +6,120 @@ export const taskInclude = {
   assignedTo: { select: { id: true, name: true, email: true, avatarUrl: true } },
   approvedBy: { select: { id: true, name: true, email: true } },
   taskTags: { include: { tag: { select: { id: true, name: true, color: true } } } },
-  subtasks: { orderBy: { position: "asc" as const } },
-  comments: { orderBy: { createdAt: "desc" as const }, take: 20 },
-  attachments: { orderBy: { createdAt: "desc" as const } },
-  mailDeliveries: { orderBy: { createdAt: "desc" as const }, take: 10 },
-};
+  subtasks: { orderBy: { position: "asc" } },
+  comments: { orderBy: { createdAt: "desc" }, take: 20 },
+  attachments: { orderBy: { createdAt: "desc" } },
+  mailDeliveries: { orderBy: { createdAt: "desc" }, take: 10 },
+} as const;
 
 type GlobalAutoArchiveOptions = {
   force?: boolean;
 };
+
+type TaskWhereOptions = {
+  defaultLifecycle?: "active" | "all";
+};
+
+export function dayBounds(date: Date) {
+  const start = new Date(date);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(date);
+  end.setHours(23, 59, 59, 999);
+  return { start, end };
+}
+
+export function buildTaskWhereFromSearchParams(
+  userId: string,
+  params: URLSearchParams,
+  options: TaskWhereOptions = {},
+) {
+  const isTrash = params.get("trash") === "true";
+  const isArchived = !isTrash && params.get("archived") === "true";
+  const where: Prisma.TaskWhereInput = { userId };
+
+  if (isTrash) {
+    where.deletedAt = { not: null };
+  } else if (isArchived) {
+    where.deletedAt = null;
+    where.archivedAt = { not: null };
+  } else if ((options.defaultLifecycle ?? "active") === "active") {
+    where.deletedAt = null;
+    where.archivedAt = null;
+  }
+
+  const status = params.get("status");
+  if (status === "TODO" || status === "IN_PROGRESS" || status === "DONE") {
+    where.status = status;
+  }
+
+  const projectId = params.get("projectId");
+  if (projectId) {
+    where.projectId = projectId;
+  }
+
+  const tagId = params.get("tagId");
+  if (tagId) {
+    where.taskTags = { some: { userId, tagId } };
+  }
+
+  const query = params.get("q")?.trim();
+  if (query) {
+    where.OR = [
+      { title: { contains: query, mode: "insensitive" } },
+      { description: { contains: query, mode: "insensitive" } },
+    ];
+  }
+
+  const smart = params.get("smart");
+  const now = new Date();
+  if (smart === "today") {
+    const { start, end } = dayBounds(now);
+    where.dueDate = { gte: start, lte: end };
+  } else if (smart === "week") {
+    const { start } = dayBounds(now);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 7);
+    end.setHours(23, 59, 59, 999);
+    where.dueDate = { gte: start, lte: end };
+  } else if (smart === "overdue") {
+    const { start } = dayBounds(now);
+    where.dueDate = { lt: start };
+    where.status = { not: "DONE" };
+  }
+
+  return where;
+}
+
+export function taskOrderByForSort(
+  sort: string | null,
+): Prisma.TaskOrderByWithRelationInput[] {
+  const fallback: Prisma.TaskOrderByWithRelationInput[] = [
+    { status: "asc" },
+    { position: "asc" },
+    { createdAt: "desc" },
+  ];
+
+  if (sort === "due") {
+    return [
+      { dueDate: { sort: "asc", nulls: "last" } },
+      { createdAt: "desc" },
+    ];
+  }
+
+  if (sort === "priority") {
+    return [{ priority: "desc" }, { createdAt: "desc" }];
+  }
+
+  if (sort === "title") {
+    return [{ title: "asc" }];
+  }
+
+  if (sort === "status") {
+    return [{ status: "asc" }, { createdAt: "desc" }];
+  }
+
+  return fallback;
+}
 
 function completedArchiveWhere(cutoff?: Date): Prisma.TaskWhereInput {
   const base: Prisma.TaskWhereInput = {

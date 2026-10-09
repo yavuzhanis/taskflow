@@ -1,16 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { Prisma } from "@/generated/prisma/client";
 import { ensureCurrentUser } from "@/lib/auth/current-user";
 import { apiError, badRequest } from "@/lib/api/http";
 import { taskCreateSchema } from "@/lib/api/validation";
 import { getPrisma } from "@/lib/db/prisma";
-import { runAutoArchive, taskInclude } from "@/lib/db/tasks";
-
-function dayBounds(date: Date) {
-  const start = new Date(date); start.setHours(0, 0, 0, 0);
-  const end = new Date(date); end.setHours(23, 59, 59, 999);
-  return { start, end };
-}
+import { buildTaskWhereFromSearchParams, runAutoArchive, taskInclude } from "@/lib/db/tasks";
 
 async function validateAssignedUser(assignedToId: string | null | undefined) {
   if (!assignedToId) return true;
@@ -23,35 +16,7 @@ export async function GET(req: NextRequest) {
     const user = await ensureCurrentUser();
     await runAutoArchive(user.id);
     const prisma = getPrisma();
-    const p = req.nextUrl.searchParams;
-    const isTrash = p.get("trash") === "true";
-    const where: Prisma.TaskWhereInput = {
-      userId: user.id,
-      deletedAt: isTrash ? { not: null } : null,
-      archivedAt: !isTrash && p.get("archived") === "true" ? { not: null } : null,
-    };
-
-    const status = p.get("status");
-    if (status === "TODO" || status === "IN_PROGRESS" || status === "DONE") where.status = status;
-    if (p.get("projectId")) where.projectId = p.get("projectId");
-    if (p.get("tagId")) where.taskTags = { some: { userId: user.id, tagId: p.get("tagId")! } };
-    const q = p.get("q")?.trim();
-    if (q) where.OR = [{ title: { contains: q, mode: "insensitive" } }, { description: { contains: q, mode: "insensitive" } }];
-
-    const smart = p.get("smart");
-    const now = new Date();
-    if (smart === "today") {
-      const { start, end } = dayBounds(now);
-      where.dueDate = { gte: start, lte: end };
-    } else if (smart === "week") {
-      const { start } = dayBounds(now);
-      const end = new Date(start); end.setDate(end.getDate() + 7); end.setHours(23, 59, 59, 999);
-      where.dueDate = { gte: start, lte: end };
-    } else if (smart === "overdue") {
-      const { start } = dayBounds(now);
-      where.dueDate = { lt: start };
-      where.status = { not: "DONE" };
-    }
+    const where = buildTaskWhereFromSearchParams(user.id, req.nextUrl.searchParams);
 
     const tasks = await prisma.task.findMany({ where, include: taskInclude, orderBy: [{ status: "asc" }, { position: "asc" }, { createdAt: "desc" }] });
     return NextResponse.json({ tasks });
